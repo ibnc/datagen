@@ -198,6 +198,10 @@ end
 if $0 == __FILE__
   puts "Running example"
 
+  num = (ARGV.size > 0 ? ARGV[0] : 100).to_i
+
+  raise "Sample size must be a positive integer" unless num > 0
+
   random_text = StringValue.new.
       of_length(2, 15).
       transformed_as(:lower)
@@ -272,8 +276,6 @@ if $0 == __FILE__
       add(wee_person, 10).
       add(young_person, 25)
 
-
-  num = 100000
   people = all_people.generate(num)
 
   puts people

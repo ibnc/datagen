@@ -2,6 +2,7 @@ require "rubygems"
 require "bundler/setup"
 
 require "forgery"
+require_relative "weighted_distribution"
 
 class GenericValue
   def generate(sample_size=1)
@@ -118,36 +119,148 @@ class StringValue < GenericValue
   end
 end
 
-# if $0 == __FILE__
-random_text = StringValue.new.
-    of_length(2, 15).
-    transformed_as(:lower)
+class EntityValue < GenericValue
 
-first_name = StringValue.new(:first_name).
-    transformed_as(:lower)
+  def initialize(name)
+    @attributes = {}
+    @name = name
+  end
 
-login = StringValue.new(:composite).
-    from(first_name, random_text).
-    joined_by("_")
+  def has(attributes)
+    @attributes.merge!(attributes)
+    self
+  end
 
-age = NumericValue.new.
-    between(5, 40)
+  def generate(times)
+    Array.new(times) {
+      @attributes.inject({}) do |memo, entry|
+        name = entry[0]
+        value = entry[1]
+        memo[name] = value.generate
+        memo
+      end
+    }
+  end
+end
 
-puts age.
-    generate(100)
+class WeightedDistro
 
-Distribution.new.
-    add(WestCoastStates.new, 10).
-    add(MidWestStates.new, 3).
-    add(EastCoastStates.new, 7).
-    generate(10)
+  def initialize
+    @generators_to_weights = {}
+  end
 
-Distribution.new.
-    add(WestCoastStates.new, 5).
-    add(MidWestStates.new, 10).
-    add(EastCoastStates.new).
-    generate(10)
+  def as_percentages
+    @interpret_weights_as_percentages = true
+    self
+  end
 
-# login_name = StringValue.new.composed_of(StringValue.new.with_format(:first_name), StringValue.new.with_format(:last_name)).joined_by(:-).transformed_as(:uppercase)
-# puts login_name.generate
-# end
+  def add(generic_value, weight)
+    raise "All weights must be postive" unless weight > 0
+    @generators_to_weights[generic_value] = weight
+    self
+  end
+
+  def default(generic_value)
+    @default = generic_value
+    self
+  end
+
+  def generate(sample_size=1)
+    raise "Must generate at least 1 sample" if sample_size < 1
+    validate_percentages if @interpret_weights_as_percentages
+
+    distributor.sample(sample_size)
+  end
+
+  private
+
+  def distributor
+    @generator ||= WeightedDistribution.new(@generators_to_weights)
+  end
+
+  def validate_percentages
+    total = sum(@generators_to_weights.values)
+
+    if !@default.nil? && total < 100
+      add(@default, 100 - total)
+      total = sum(@generators_to_weights.values)
+    end
+
+    raise "Percentages do not add up to 100%" unless total.round == 100
+  end
+
+  def sum(collection)
+    collection.reduce(:+)
+  end
+
+end
+
+if $0 == __FILE__
+  puts "Running example"
+
+  random_text = StringValue.new.
+      of_length(2, 15).
+      transformed_as(:lower)
+
+  first_name = StringValue.new(:first_name).
+      transformed_as(:lower)
+
+  login = StringValue.new(:composite).
+      from(first_name, random_text).
+      joined_by("_")
+
+  wee_people = NumericValue.new.
+      between(1, 3)
+
+  youngins = NumericValue.new.
+      between(4, 12)
+
+  troublemakers = NumericValue.new.
+      between(13, 20)
+
+  everyone_else = NumericValue.new.
+      between(21, 120)
+
+  ages = WeightedDistro.new.
+      add(wee_people, 1).
+      add(youngins, 3).
+      add(troublemakers, 3).
+      add(everyone_else, 5)
+
+  ages = WeightedDistro.new.
+      as_percentages.
+      add(wee_people, 10).
+      add(youngins, 25).
+      add(troublemakers, 40).
+      default(everyone_else)
+
+  weight = NumericValue.new.
+      between(80, 270)
+
+  person = EntityValue.new("person").
+      has(
+          patient_name: first_name,
+          patient_age: ages,
+          patient_weight: weight
+      )
+
+  num = 10000
+  people = person.generate(num)
+
+  def age_percentage(people, total, &block)
+    ages = people.map {|person| person[:patient_age]}.flatten
+    count = ages.select(&block).size
+    "#{100 * (count / total.to_f)}%"
+  end
+
+  puts %Q{
+  out of #{num} samples:
+
+  wee: #{age_percentage(people, num) {|age| age < 4}}
+  young: #{age_percentage(people, num) {|age| age >= 4 && age <= 12}}
+  trouble: #{age_percentage(people, num) {|age| age >= 13 && age <= 20}}
+  else: #{age_percentage(people, num) {|age| age > 20}}
+  }
+
+  # Entity.new.associate(first_name, age, weight)
+end

@@ -131,12 +131,12 @@ class EntityValue < GenericValue
     self
   end
 
-  def generate(times)
-    Array.new(times) {
+  def generate(sample_size=1)
+    Array.new(sample_size) {
       @attributes.inject({}) do |memo, entry|
         name = entry[0]
         value = entry[1]
-        memo[name] = value.generate
+        memo[name] = value.generate[0]
         memo
       end
     }
@@ -209,7 +209,7 @@ if $0 == __FILE__
       from(first_name, random_text).
       joined_by("_")
 
-  wee_people = NumericValue.new.
+  wee = NumericValue.new.
       between(1, 3)
 
   youngins = NumericValue.new.
@@ -221,31 +221,64 @@ if $0 == __FILE__
   everyone_else = NumericValue.new.
       between(21, 120)
 
-  ages = WeightedDistro.new.
-      add(wee_people, 1).
+  ages_by_weight = WeightedDistro.new.
+      add(wee, 1).
       add(youngins, 3).
       add(troublemakers, 3).
       add(everyone_else, 5)
 
-  ages = WeightedDistro.new.
+  ages_by_percentage = WeightedDistro.new.
       as_percentages.
-      add(wee_people, 10).
+      add(wee, 10).
       add(youngins, 25).
       add(troublemakers, 40).
       default(everyone_else)
 
+  wee_weight = NumericValue.new.
+      between(5, 11)
+  young_weight = NumericValue.new.
+      between(12, 55)
+  adult_weight = NumericValue.new.
+      between(56, 270)
+  # else_weight = NumericValue.new.
+  #     between(151, 270)
+
+  weights_by_percentage = WeightedDistro.new.
+      as_percentages.
+      add(wee_weight, 10).
+      add(young_weight, 25).
+      add(adult_weight, 40).
+      default(adult_weight)
+
   weight = NumericValue.new.
       between(80, 270)
 
-  person = EntityValue.new("person").
+  wee_person = EntityValue.new("person").
       has(
           patient_name: first_name,
-          patient_age: ages,
-          patient_weight: weight
+          patient_age: wee,
+          patient_weight: wee_weight
       )
 
-  num = 10000
-  people = person.generate(num)
+  young_person = EntityValue.new("person").
+      has(
+          patient_name: first_name,
+          patient_age: youngins,
+          patient_weight: wee_weight
+      )
+
+
+  all_people = WeightedDistro.new.
+      add(wee_person, 10).
+      add(young_person, 25)
+
+
+  num = 100000
+  people = all_people.generate(num)
+
+  puts people
+
+
 
   def age_percentage(people, total, &block)
     ages = people.map {|person| person[:patient_age]}.flatten
@@ -260,7 +293,6 @@ if $0 == __FILE__
   young: #{age_percentage(people, num) {|age| age >= 4 && age <= 12}}
   trouble: #{age_percentage(people, num) {|age| age >= 13 && age <= 20}}
   else: #{age_percentage(people, num) {|age| age > 20}}
-  }
+       }
 
-  # Entity.new.associate(first_name, age, weight)
 end

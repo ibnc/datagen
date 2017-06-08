@@ -4,10 +4,11 @@ GEM
     forgery (0.6.0)
 
 PLATFORMS
+  java
   ruby
 
 DEPENDENCIES
   forgery (~> 0.6.0)
 
 BUNDLED WITH
-   1.15.0
+   1.15.1

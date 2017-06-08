@@ -1,8 +1,14 @@
+require 'java'
+require './vendor/choco-solver/choco-solver-4.0.4-with-dependencies.jar'
 require "rubygems"
 require "bundler/setup"
 
 require "forgery"
-require_relative "weighted_distribution"
+require "./weighted_distribution"
+
+class Model < org.chocosolver.solver.Model
+end
+
 
 class GenericValue
   def generate(sample_size=1)
@@ -16,11 +22,18 @@ class GenericValue
     result
   end
 
+  def generator
+    @generator
+  end
+
   private
 
   def one_result
+    if self.class.to_s == "NumericValue" then
+      return generator.solve()
+    end
     unless @format == :composite
-      return @allows_options ? @generator.send(@method, options) : @generator.send(@method)
+      return @allows_options ? generator.send(@method, options) : generator.send(@method)
     end
 
     raise "Must have a separator for :composite StringValues" unless @separator
@@ -37,12 +50,20 @@ class NumericValue < GenericValue
   def initialize(format=:integer)
     @format = format
     formatter_name, @method, @allows_options = FORMATTERS[@format]
-    @generator = Forgery(formatter_name)
+    @model = Model.new
+  end
+
+  def generator
+    @model.getSolver()
   end
 
   def between(min, max)
-    options.merge!(at_least: min, at_most: max)
+    @var = @model.intVar(min.to_java(Java::int), max.to_java(Java::int), true.to_java)
     self
+  end
+
+  def var
+    @var
   end
 
   def options
@@ -50,7 +71,7 @@ class NumericValue < GenericValue
   end
 
   def apply_transform(result)
-    return result
+    return @var.getValue()
   end
 end
 
@@ -131,6 +152,10 @@ class EntityValue < GenericValue
     self
   end
 
+  def var
+    @attributes
+  end
+
   def generate(sample_size=1)
     Array.new(sample_size) {
       @attributes.inject({}) do |memo, entry|
@@ -143,10 +168,36 @@ class EntityValue < GenericValue
   end
 end
 
+class ChocoDistribution
+  def initialize(generators_to_weights={})
+    @generators_to_weights = generators_to_weights
+    @model = Model.new
+  end
+
+  def sample(sample_size)
+    distro_var = @model.intVarArray(sample_size, 1, 100000)
+    offset = 0
+    @generators_to_weights.each do |generic_value,weight|
+      percent_to_count(weight, sample_size).to_i.times do
+        distro_var[offset] = generic_value.var
+        offset += 1
+      end
+    end
+    @model.getSolver().solve()
+    distro_var.map { |v| v.getValue() }
+  end
+
+  private
+  def percent_to_count(percent, count)
+    count.to_f*(percent.to_f/100.0)
+  end
+end
+
 class WeightedDistro
 
   def initialize
     @generators_to_weights = {}
+    @model = Model.new
   end
 
   def as_percentages
@@ -175,7 +226,11 @@ class WeightedDistro
   private
 
   def distributor
-    @generator ||= WeightedDistribution.new(@generators_to_weights)
+    @generator = if @generators_to_weights.keys.first.class.to_s == "EntityValue"
+                   WeightedDistribution.new(@generators_to_weights)
+                 else
+                   ChocoDistribution.new(@generators_to_weights)
+                 end
   end
 
   def validate_percentages
@@ -251,8 +306,7 @@ if $0 == __FILE__
       as_percentages.
       add(wee_weight, 10).
       add(young_weight, 25).
-      add(adult_weight, 40).
-      default(adult_weight)
+      add(adult_weight, 65)
 
   weight = NumericValue.new.
       between(80, 270)

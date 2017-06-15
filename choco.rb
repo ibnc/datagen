@@ -23,16 +23,18 @@ agesAbove60 = model.intVarArray(percent_to_count(20, count), 60, max_age, true)
 solver = model.getSolver()
 solver.solve()
 
-puts "finding the solution by simply modeling:\n"
+puts "finding the solution by simply modeling:\n\n"
 
-p get_values(agesUnder20).
+solutions = get_values(agesUnder20).
   concat(get_values(agesBetween20And40)).
   concat(get_values(agesBetween40And60)).
   concat(get_values(agesAbove60))
 
+p solutions
+
 puts "***************"*88
 puts "\n\n\n\n"
-puts "finding the solution using constraints using constraints:\n"
+puts "finding the solution using constraints using constraints:\n\n"
 
 
 model2 = Model.new("age distro using constraints")
